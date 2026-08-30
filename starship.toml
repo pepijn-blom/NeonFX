@@ -1,0 +1,55 @@
+# NeonFX — starship prompt
+
+add_newline = true
+command_timeout = 200
+palette = "neonfx"
+format = "[$directory$git_branch$git_status](bold cyan)$character"
+
+[palettes.neonfx]
+void = "#0c0018"
+lavender = "#ffb3e6"
+cyan = "#00f5ff"
+bright_cyan = "#66faff"
+magenta = "#ff0099"
+pink = "#ff33aa"
+mint = "#33ffb8"
+purple = "#5a3a88"
+soft = "#7a6a98"
+
+[character]
+error_symbol = "[✗](bold pink)"
+success_symbol = "[❯](bold magenta)"
+
+[directory]
+style = "bold bright_cyan"
+truncation_length = 2
+truncation_symbol = "…/"
+repo_root_style = "bold magenta"
+repo_root_format = "[$repo_root]($repo_root_style)[$path]($style)[$read_only]($read_only_style) "
+
+[git_branch]
+format = "[$branch]($style) "
+style = "bold italic pink"
+
+[git_status]
+format = '[$all_status]($style)'
+style = "mint"
+ahead = "⇡${count} "
+diverged = "⇕⇡${ahead_count}⇣${behind_count} "
+behind = "⇣${count} "
+conflicted = " "
+up_to_date = " "
+untracked = "? "
+modified = " "
+stashed = "$"
+staged = "+"
+renamed = "»"
+deleted = "✘"
+
+[cmd_duration]
+min_time = 2000
+format = "[$duration]($style) "
+style = "soft"
+
+[time]
+disabled = true

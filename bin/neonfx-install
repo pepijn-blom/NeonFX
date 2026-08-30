@@ -1,0 +1,162 @@
+#!/bin/bash
+
+# omarchy:summary=Install and apply the NeonFX Omarchy theme
+
+set -euo pipefail
+
+THEME_ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+# shellcheck source=../lib/theme_id.sh
+source "$THEME_ROOT/lib/theme_id.sh"
+
+OMARCHY_THEMES="$HOME/.config/omarchy/themes"
+THEME_DEST="$OMARCHY_THEMES/$THEME_SLUG"
+HOOK_D="$HOME/.config/omarchy/hooks/theme-set.d/${THEME_SLUG}.sh"
+HOOK_MAIN="$HOME/.config/omarchy/hooks/theme-set"
+LOCAL_BIN="$HOME/.local/bin"
+SKIP_APPLY=0
+FROM_GIT=""
+
+usage() {
+  cat <<EOF
+Usage: neonfx-install [options]
+
+One-command setup for NeonFX on Omarchy.
+
+Options:
+  --from-git URL   Clone the theme repo, then install (instead of using this copy)
+  --skip-apply     Wire hooks and symlinks only; do not run omarchy theme set
+  -h, --help       Show this help
+
+Examples:
+  neonfx-install
+  neonfx-install --from-git $THEME_GIT_URL
+  neonfx-install --skip-apply
+EOF
+}
+
+log() {
+  printf '==> %s\n' "$*"
+}
+
+warn() {
+  printf '!! %s\n' "$*" >&2
+}
+
+die() {
+  warn "$*"
+  exit 1
+}
+
+require_omarchy() {
+  if [[ ! -d ${OMARCHY_PATH:-$HOME/.local/share/omarchy} ]]; then
+    die "Omarchy not found. Install Omarchy first: https://omarchy.org"
+  fi
+
+  if ! command -v omarchy-theme-set >/dev/null 2>&1; then
+    die "omarchy-theme-set not in PATH. Is Omarchy installed correctly?"
+  fi
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --from-git)
+      [[ $# -ge 2 ]] || die "--from-git requires a URL"
+      FROM_GIT="$2"
+      shift 2
+      ;;
+    --skip-apply)
+      SKIP_APPLY=1
+      shift
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      die "Unknown option: $1 (try --help)"
+      ;;
+    esac
+  done
+}
+
+install_theme_dir() {
+  mkdir -p "$OMARCHY_THEMES"
+
+  if [[ -n $FROM_GIT ]]; then
+    log "Cloning theme from $FROM_GIT"
+    rm -rf "$THEME_DEST"
+    git clone "$FROM_GIT" "$THEME_DEST"
+    THEME_ROOT="$THEME_DEST"
+    return
+  fi
+
+  if [[ -e $THEME_DEST && $(readlink -f "$THEME_DEST") != $(readlink -f "$THEME_ROOT") ]]; then
+    die "$THEME_DEST already exists and points elsewhere. Remove it or use --from-git."
+  fi
+
+  log "Linking theme into $THEME_DEST"
+  ln -sfn "$THEME_ROOT" "$THEME_DEST"
+}
+
+install_hooks() {
+  mkdir -p "$(dirname "$HOOK_D")" "$LOCAL_BIN"
+
+  log "Installing theme-set.d hook"
+  ln -sfn "$THEME_ROOT/hooks/theme-set.d/${THEME_SLUG}.sh" "$HOOK_D"
+  chmod +x "$THEME_ROOT/hooks/theme-set.d/${THEME_SLUG}.sh"
+
+  if [[ ! -f $HOOK_MAIN ]]; then
+    log "Installing theme-set hook (copies fish.conf on theme apply)"
+    ln -sfn "$THEME_ROOT/hooks/theme-set" "$HOOK_MAIN"
+    chmod +x "$THEME_ROOT/hooks/theme-set"
+  else
+    warn "Keeping existing theme-set hook: $HOOK_MAIN"
+    warn "Ensure it copies fish.conf from ~/.local/state/omarchy/current/theme/fish.conf"
+  fi
+}
+
+install_cli_tools() {
+  local script
+
+  for script in "${THEME_CLI_SCRIPTS[@]}"; do
+    if [[ -e $THEME_ROOT/bin/$script ]]; then
+      ln -sfn "$THEME_ROOT/bin/$script" "$LOCAL_BIN/$script"
+    fi
+  done
+
+  chmod +x "$THEME_ROOT/bin/"neonfx-* "$THEME_ROOT/bin/omarchy-neonfx-"* 2>/dev/null || true
+}
+
+apply_theme() {
+  if [[ $SKIP_APPLY -eq 1 ]]; then
+    log "Skipping omarchy theme set (--skip-apply)"
+    log "Run: omarchy theme set \"$THEME_DISPLAY\""
+    return
+  fi
+
+  log "Applying theme (this restarts waybar, terminal, etc.)"
+  omarchy-theme-set "$THEME_DISPLAY"
+}
+
+main() {
+  parse_args "$@"
+  require_omarchy
+  install_theme_dir
+  install_hooks
+  install_cli_tools
+  apply_theme
+
+  cat <<EOF
+
+${THEME_DISPLAY} is installed.
+
+  Verify:  neonfx-doctor
+  Neon FX: Super+Alt+Space → Style → Neon FX
+  CLI FX:  omarchy-neonfx-toggle preset-full
+
+Open a new terminal tab so fish/bash pick up bat + cat changes.
+EOF
+}
+
+main "$@"

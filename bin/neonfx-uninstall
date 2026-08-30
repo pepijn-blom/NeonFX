@@ -1,0 +1,145 @@
+#!/bin/bash
+
+# omarchy:summary=Remove NeonFX wiring (optionally switch theme)
+
+set -euo pipefail
+
+SCRIPT_ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+# shellcheck source=../lib/theme_id.sh
+source "$SCRIPT_ROOT/lib/theme_id.sh"
+
+THEME_DEST="$HOME/.config/omarchy/themes/$THEME_SLUG"
+SWITCH_THEME=""
+KEEP_THEME_DIR=0
+
+usage() {
+  cat <<EOF
+Usage: neonfx-uninstall [options]
+
+Removes NeonFX hooks, symlinks, and CLI tools.
+
+Options:
+  --switch-to NAME   Apply another Omarchy theme after cleanup (e.g. "Tokyo Night")
+  --keep-theme-dir   Do not remove $THEME_DEST
+  -h, --help         Show this help
+EOF
+}
+
+log() {
+  printf '==> %s\n' "$*"
+}
+
+die() {
+  printf '!! %s\n' "$*" >&2
+  exit 1
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --switch-to)
+      [[ $# -ge 2 ]] || die "--switch-to requires a theme name"
+      SWITCH_THEME="$2"
+      shift 2
+      ;;
+    --keep-theme-dir)
+      KEEP_THEME_DIR=1
+      shift
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      die "Unknown option: $1"
+      ;;
+    esac
+  done
+}
+
+remove_if_ours() {
+  local path="$1"
+  local expected="$2"
+
+  [[ -L $path ]] || return 0
+  [[ $(readlink -f "$path") == "$(readlink -f "$expected")" ]] || return 0
+
+  rm -f "$path"
+  log "Removed $path"
+}
+
+cleanup_theme_root() {
+  local theme_root="$1"
+
+  remove_if_ours "$HOME/.config/omarchy/hooks/theme-set.d/${THEME_SLUG}.sh" \
+    "$theme_root/hooks/theme-set.d/${THEME_SLUG}.sh"
+  remove_if_ours "$HOME/.config/omarchy/hooks/theme-set" "$theme_root/hooks/theme-set"
+  remove_if_ours "$HOME/.config/omarchy/extensions/menu.sh" "$theme_root/extensions/menu.sh"
+  remove_if_ours "$HOME/.local/share/mc/skins/${THEME_SLUG}.ini" "$theme_root/mc.ini"
+  remove_if_ours "$HOME/.config/bat/themes/${BAT_THEME_NAME}.tmTheme" \
+    "$theme_root/bat/${BAT_THEME_NAME}.tmTheme"
+  remove_if_ours "$HOME/.config/omarchy/theme.bash" "$theme_root/bash.conf"
+  remove_if_ours "$HOME/.config/git/${THEME_SLUG}.gitconfig" "$theme_root/git.conf"
+  remove_if_ours "$HOME/.config/git/${THEME_SLUG}-delta.gitconfig" "$theme_root/delta.gitconfig"
+  remove_if_ours "$HOME/.config/lazygit/config.yml" "$theme_root/lazygit/config.yml"
+  remove_if_ours "$HOME/.config/starship.toml" "$theme_root/starship.toml"
+  remove_if_ours "$HOME/.config/fastfetch/config.jsonc" "$theme_root/fastfetch.jsonc"
+
+  local script
+  for script in "${THEME_CLI_SCRIPTS[@]}"; do
+    remove_if_ours "$HOME/.local/bin/$script" "$theme_root/bin/$script"
+  done
+}
+
+main() {
+  parse_args "$@"
+
+  local theme_root=""
+  if [[ -d $THEME_DEST ]]; then
+    theme_root="$(readlink -f "$THEME_DEST")"
+  fi
+
+  if [[ -n $theme_root ]]; then
+    cleanup_theme_root "$theme_root"
+  fi
+
+  if [[ -f $HOME/.config/fish/conf.d/omarchy-theme.fish ]] && grep -Fq "${THEME_DISPLAY}" "$HOME/.config/fish/conf.d/omarchy-theme.fish" 2>/dev/null; then
+    rm -f "$HOME/.config/fish/conf.d/omarchy-theme.fish"
+  fi
+  rm -f "$HOME/.config/fish/conf.d/${THEME_SLUG}-cli.fish"
+
+  if [[ -f $HOME/.config/omarchy/extensions/omarchy-menu.jsonc ]]; then
+    python3 "$SCRIPT_ROOT/lib/menu_jsonc.py" remove \
+      "$HOME/.config/omarchy/extensions/omarchy-menu.jsonc" \
+      "$SCRIPT_ROOT/extensions/omarchy-menu.jsonc"
+  fi
+
+  if [[ -f $HOME/.gitconfig ]]; then
+    sed -i "/# ${THEME_SLUG} git colors/,+2d" "$HOME/.gitconfig"
+    sed -i "/# ${THEME_SLUG} delta pager/,+2d" "$HOME/.gitconfig"
+  fi
+
+  if [[ $KEEP_THEME_DIR -eq 0 && -e $THEME_DEST ]]; then
+    log "Removing $THEME_DEST"
+    rm -rf "$THEME_DEST"
+  fi
+
+  local active_theme=""
+  if [[ -f $HOME/.local/state/omarchy/current/theme.name ]]; then
+    active_theme="$(cat "$HOME/.local/state/omarchy/current/theme.name")"
+  elif [[ -f $HOME/.config/omarchy/current/theme.name ]]; then
+    active_theme="$(cat "$HOME/.config/omarchy/current/theme.name")"
+  fi
+
+  if [[ -n $SWITCH_THEME ]]; then
+    command -v omarchy-theme-set >/dev/null 2>&1 || die "omarchy-theme-set not found"
+    log "Switching to $SWITCH_THEME"
+    omarchy-theme-set "$SWITCH_THEME"
+  elif [[ "$active_theme" == "$THEME_SLUG" ]]; then
+    log "${THEME_DISPLAY} is still active. Switch themes with: omarchy theme set \"<name>\""
+  fi
+
+  log "Done."
+}
+
+main "$@"

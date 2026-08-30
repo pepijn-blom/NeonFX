@@ -1,0 +1,7 @@
+.DS_Store
+*.tmp
+.codegraph/
+__pycache__/
+*.pyc
+tests/.tmp/
+tests/vendor/

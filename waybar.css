@@ -1,0 +1,73 @@
+@define-color foreground #ece6ff;
+@define-color background #0c0018;
+@define-color accent #ff0099;
+@define-color cyan #00f5ff;
+@define-color warning #ff3366;
+@define-color muted alpha(@foreground, 0.55);
+
+#workspaces button {
+  color: @muted;
+}
+
+#workspaces button.active {
+  color: @cyan;
+  text-shadow:
+    0 0 4px @cyan,
+    0 0 10px @cyan,
+    0 0 18px @accent,
+    0 0 28px @accent,
+    0 0 40px @accent;
+}
+
+#workspaces button.empty {
+  opacity: 0.35;
+}
+
+#clock {
+  color: @foreground;
+  text-shadow:
+    0 0 6px @cyan,
+    0 0 14px alpha(@accent, 0.7);
+}
+
+#custom-omarchy {
+  color: @accent;
+  text-shadow:
+    0 0 8px @accent,
+    0 0 16px @accent,
+    0 0 24px @cyan;
+}
+
+#cpu,
+#battery,
+#network,
+#pulseaudio,
+#bluetooth {
+  color: @foreground;
+}
+
+#cpu:hover,
+#battery:hover,
+#network:hover,
+#pulseaudio:hover,
+#bluetooth:hover {
+  color: @accent;
+  text-shadow:
+    0 0 6px @accent,
+    0 0 14px @cyan;
+}
+
+#custom-update {
+  color: @cyan;
+  text-shadow:
+    0 0 6px @cyan,
+    0 0 12px @accent;
+}
+
+tooltip {
+  background-color: @background;
+  color: @foreground;
+  border: 2px solid @accent;
+  padding: 4px 8px;
+  text-shadow: 0 0 8px @cyan;
+}

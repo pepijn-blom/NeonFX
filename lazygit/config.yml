@@ -1,0 +1,34 @@
+# NeonFX — lazygit theme
+
+gui:
+  showIcons: true
+  theme:
+    activeBorderColor:
+      - '#00f5ff'
+      - bold
+    inactiveBorderColor:
+      - '#5a3a88'
+    optionsTextColor:
+      - '#ff33aa'
+    optionsBgColor:
+      - '#0c0018'
+    selectedLineBgColor:
+      - '#1a1030'
+    selectedRangeBgColor:
+      - '#3d2a5c'
+    cherryPickedCommitBgColor:
+      - '#3d2a5c'
+    cherryPickedCommitFgColor:
+      - '#66faff'
+    unstagedChangesColor:
+      - '#ff33aa'
+    stagedChangesColor:
+      - '#33ffb8'
+    defaultFgColor:
+      - '#00f5ff'
+    searchingActiveBorderColor:
+      - '#ff0099'
+git:
+  pagers:
+    - colorArg: always
+      pager: bat --color=always --style=plain --paging=never --theme='NeonFX'

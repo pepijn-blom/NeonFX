@@ -1,0 +1,85 @@
+#!/bin/bash
+
+# omarchy:summary=Apply NeonFX shader toggles to Ghostty
+
+set -euo pipefail
+
+THEME_ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+# shellcheck source=../lib/theme_id.sh
+source "$THEME_ROOT/lib/theme_id.sh"
+STATE_DIR="$THEME_STATE_DIR"
+TOGGLE_DIR="$THEME_TOGGLE_DIR"
+SHADER_CONF="$STATE_DIR/ghostty-shaders.conf"
+STATE_SHADERS="$HOME/.local/state/omarchy/current/theme/shaders"
+CONFIG_SHADERS="$HOME/.config/omarchy/current/theme/shaders"
+THEME_SHADERS="$STATE_SHADERS"
+[[ ! -d $STATE_SHADERS && -d $CONFIG_SHADERS ]] && THEME_SHADERS="$CONFIG_SHADERS"
+
+mkdir -p "$STATE_DIR" "$TOGGLE_DIR"
+
+fx_enabled() {
+  [[ -f "$TOGGLE_DIR/$1" ]]
+}
+
+sync_theme_shaders() {
+  python3 - "$THEME_ROOT" <<'EOF'
+import sys
+from pathlib import Path
+
+theme_root = sys.argv[1]
+sys.path.insert(0, str(Path(theme_root) / "lib"))
+from fx_config import sync_theme_shaders
+
+sync_theme_shaders(theme_root)
+EOF
+}
+
+write_ghostty_shaders() {
+  local lines=()
+
+  if fx_enabled bloom; then
+    lines+=("custom-shader = ?\"$THEME_SHADERS/neon-glow.glsl\"")
+  fi
+  if fx_enabled cursor-trail; then
+    lines+=("custom-shader = ?\"$THEME_SHADERS/cursor-trail.glsl\"")
+  fi
+  if fx_enabled cursor-glitch; then
+    lines+=("custom-shader = ?\"$THEME_SHADERS/cursor-glitch.glsl\"")
+  fi
+  if fx_enabled terminal-crt; then
+    lines+=("custom-shader = ?\"$THEME_SHADERS/crt-scanlines.glsl\"")
+  fi
+
+  if ((${#lines[@]} > 0)); then
+    lines+=("custom-shader-animation = true")
+  fi
+
+  local new_content=""
+  if ((${#lines[@]} > 0)); then
+    new_content=$(printf '%s\n' "${lines[@]}")
+  fi
+
+  local old_content=""
+  if [[ -f "$SHADER_CONF" ]]; then
+    old_content=$(cat "$SHADER_CONF")
+  fi
+
+  if [[ "$new_content" != "$old_content" ]]; then
+    printf '%s\n' "$new_content" >"$SHADER_CONF"
+    touch "$STATE_DIR/.shaders_changed"
+  fi
+}
+
+rm -f "$STATE_DIR/.shaders_changed"
+sync_theme_shaders
+write_ghostty_shaders
+
+# Only restart / reload terminal if files were actually changed
+if [[ -f "$STATE_DIR/.shaders_changed" ]]; then
+  rm -f "$STATE_DIR/.shaders_changed"
+  if command -v omarchy-restart-terminal >/dev/null 2>&1; then
+    omarchy-restart-terminal
+  elif pgrep -x ghostty >/dev/null 2>&1; then
+    killall -SIGUSR2 ghostty 2>/dev/null || true
+  fi
+fi

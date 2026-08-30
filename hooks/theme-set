@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# Copies theme fish.conf into fish conf.d on every omarchy theme set.
+# Installed by neonfx-install when no theme-set hook exists yet.
+
+THEME_FISH="$HOME/.local/state/omarchy/current/theme/fish.conf"
+[[ ! -f $THEME_FISH ]] && THEME_FISH="$HOME/.config/omarchy/current/theme/fish.conf"
+DEST="$HOME/.config/fish/conf.d/omarchy-theme.fish"
+
+if [[ -f $THEME_FISH ]]; then
+  mkdir -p "$(dirname "$DEST")"
+  cp "$THEME_FISH" "$DEST"
+else
+  rm -f "$DEST"
+fi

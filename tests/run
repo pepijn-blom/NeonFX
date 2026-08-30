@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$root"
+
+bats_bin="$(command -v bats || true)"
+if [[ -z $bats_bin ]]; then
+  vendor="$root/tests/vendor/bats-core"
+  if [[ ! -x $vendor/bin/bats ]]; then
+    mkdir -p "$root/tests/vendor"
+    git clone --depth 1 --branch v1.13.0 https://github.com/bats-core/bats-core.git "$vendor"
+  fi
+  bats_bin="$vendor/bin/bats"
+fi
+
+exec "$bats_bin" tests/unit tests/e2e "$@"

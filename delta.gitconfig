@@ -1,0 +1,27 @@
+# NeonFX — delta pager (included when delta is installed)
+# Install: omarchy pkg add git-delta  (pacman name; binary is `delta`)
+
+[core]
+	pager = delta
+
+[interactive]
+	diffFilter = delta --color-only
+
+[delta]
+	navigate = true
+	dark = true
+	line-numbers = true
+	syntax-theme = "Monokai Extended"
+	plus-style = "syntax #33ffb8"
+	plus-emph-style = "bold syntax #33ffb8"
+	minus-style = "syntax #ff3366"
+	minus-emph-style = "bold syntax #ff3366"
+	zero-style = "syntax #5a3a88"
+	commit-decoration-style = "bold #00f5ff"
+	file-style = "bold #66faff"
+	hunk-header-decoration-style = "bold #ff33aa"
+	hunk-header-file-style = "bold #00f5ff"
+	hunk-header-line-number-style = "#7a6a98"
+	line-numbers-minus-style = "#ff3366"
+	line-numbers-plus-style = "#33ffb8"
+	line-numbers-zero-style = "#5a3a88"

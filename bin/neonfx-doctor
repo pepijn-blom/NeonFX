@@ -1,0 +1,236 @@
+#!/bin/bash
+
+# omarchy:summary=Verify NeonFX installation and print fixes
+
+set -euo pipefail
+
+SCRIPT_ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+# shellcheck source=../lib/theme_id.sh
+source "$SCRIPT_ROOT/lib/theme_id.sh"
+
+ISSUES=0
+
+ok() {
+  printf '  ok  %s\n' "$*"
+}
+
+bad() {
+  printf '  !!  %s\n' "$*"
+  ISSUES=$((ISSUES + 1))
+}
+
+warn() {
+  printf '  ??  %s\n' "$*"
+}
+
+check_link() {
+  local path="$1"
+  local expected="$2"
+  local label="$3"
+
+  if [[ ! -e $path ]]; then
+    bad "$label missing: $path"
+    return
+  fi
+
+  if [[ -L $path ]] && [[ $(readlink -f "$path") == "$(readlink -f "$expected")" ]]; then
+    ok "$label"
+  elif [[ -f $path ]] && [[ $(readlink -f "$path") == "$(readlink -f "$expected")" ]]; then
+    ok "$label"
+  else
+    bad "$label wrong target: $path -> $(readlink -f "$path" 2>/dev/null || echo '?')"
+  fi
+}
+
+main() {
+  local theme_root="$HOME/.config/omarchy/themes/$THEME_SLUG"
+
+  echo "${THEME_DISPLAY} doctor"
+  echo
+
+  if command -v omarchy-theme-set >/dev/null 2>&1; then
+    ok "Omarchy CLI available"
+  else
+    bad "omarchy-theme-set not in PATH"
+  fi
+
+  if [[ -d $theme_root ]]; then
+    theme_root="$(readlink -f "$theme_root")"
+    ok "Theme directory: $theme_root"
+  else
+    bad "Theme not in ~/.config/omarchy/themes/$THEME_SLUG"
+    theme_root=""
+  fi
+
+  echo
+  echo "Wiring"
+
+  local active_theme=""
+  if [[ -f $HOME/.local/state/omarchy/current/theme.name ]]; then
+    active_theme="$(cat "$HOME/.local/state/omarchy/current/theme.name")"
+  elif [[ -f $HOME/.config/omarchy/current/theme.name ]]; then
+    active_theme="$(cat "$HOME/.config/omarchy/current/theme.name")"
+  fi
+
+  local theme_active=0
+  if [[ "$active_theme" == "$THEME_SLUG" ]]; then
+    theme_active=1
+    ok "Active Omarchy theme: $THEME_DISPLAY"
+  else
+    warn "Theme not active (run: omarchy theme set \"$THEME_DISPLAY\")"
+  fi
+
+  check_owned_link() {
+    local path="$1"
+    local expected="$2"
+    local label="$3"
+
+    if [[ $theme_active -eq 1 ]]; then
+      check_link "$path" "$expected" "$label"
+      return
+    fi
+
+    if [[ -L $path ]] && [[ $(readlink -f "$path") == "$(readlink -f "$expected")" ]]; then
+      bad "$label still linked after switching away: $path"
+    fi
+  }
+
+  if [[ -n $theme_root ]]; then
+    check_link "$HOME/.config/omarchy/hooks/theme-set.d/${THEME_SLUG}.sh" \
+      "$theme_root/hooks/theme-set.d/${THEME_SLUG}.sh" "theme-set.d hook"
+
+    if [[ $theme_active -eq 1 ]]; then
+      check_link "$HOME/.local/bin/omarchy-neonfx-apply" \
+        "$theme_root/bin/omarchy-neonfx-apply" "fx-apply CLI"
+      check_link "$HOME/.local/bin/omarchy-neonfx-toggle" \
+        "$theme_root/bin/omarchy-neonfx-toggle" "fx-toggle CLI"
+      check_link "$HOME/.local/bin/omarchy-neonfx-gui" \
+        "$theme_root/bin/omarchy-neonfx-gui" "fx-gui / sliders Control Center"
+    fi
+
+    check_owned_link "$HOME/.config/omarchy/theme.bash" \
+      "$theme_root/bash.conf" "bash theme.bash"
+    check_owned_link "$HOME/.config/bat/themes/${BAT_THEME_NAME}.tmTheme" \
+      "$theme_root/bat/${BAT_THEME_NAME}.tmTheme" "bat theme"
+    check_owned_link "$HOME/.local/share/mc/skins/${THEME_SLUG}.ini" \
+      "$theme_root/mc.ini" "Midnight Commander skin"
+    check_owned_link "$HOME/.config/git/${THEME_SLUG}.gitconfig" \
+      "$theme_root/git.conf" "git colors"
+    check_owned_link "$HOME/.config/lazygit/config.yml" \
+      "$theme_root/lazygit/config.yml" "lazygit theme"
+    check_owned_link "$HOME/.config/starship.toml" \
+      "$theme_root/starship.toml" "starship prompt"
+    check_owned_link "$HOME/.config/fastfetch/config.jsonc" \
+      "$theme_root/fastfetch.jsonc" "fastfetch config"
+
+    if [[ $theme_active -eq 1 ]]; then
+      if [[ -f $HOME/.config/omarchy/extensions/omarchy-menu.jsonc ]] && grep -q 'style.neon' "$HOME/.config/omarchy/extensions/omarchy-menu.jsonc" 2>/dev/null; then
+        ok "Quickshell menu extension"
+      elif [[ -e $HOME/.config/omarchy/extensions/menu.sh ]]; then
+        ok "menu extension (legacy menu.sh)"
+      else
+        warn "menu extension missing"
+      fi
+    fi
+  fi
+
+  if [[ -f $HOME/.config/omarchy/hooks/theme-set ]]; then
+    ok "theme-set hook present"
+  else
+    warn "theme-set hook missing — fish colors may not apply (run neonfx-install)"
+  fi
+
+  if [[ -f $HOME/.gitconfig ]] && rg -q "${THEME_SLUG} git colors" "$HOME/.gitconfig" 2>/dev/null; then
+    ok "gitconfig includes ${THEME_SLUG} colors"
+  else
+    warn "gitconfig missing ${THEME_SLUG} include — run neonfx-install"
+  fi
+
+  if git config --global color.ui 2>/dev/null | rg -qx true; then
+    ok "git color.ui enabled"
+  elif [[ -f $HOME/.config/git/${THEME_SLUG}.gitconfig ]]; then
+    ok "git colors file present (color.ui set in include)"
+  else
+    warn "git colors not configured"
+  fi
+
+  echo
+  echo "Shell + bat"
+
+  if command -v bat >/dev/null 2>&1; then
+    if bat --list-themes 2>/dev/null | rg -qx "$BAT_THEME_NAME"; then
+      ok "bat knows theme $BAT_THEME_NAME"
+    else
+      bad "bat theme not cached — run: bat cache --build"
+    fi
+  else
+    warn "bat not installed"
+  fi
+
+  if [[ -f $HOME/.config/fish/conf.d/omarchy-theme.fish ]]; then
+    if rg -q "BAT_THEME.*${BAT_THEME_NAME}" "$HOME/.config/fish/conf.d/omarchy-theme.fish" 2>/dev/null; then
+      ok "fish omarchy-theme.fish sets BAT_THEME"
+    else
+      warn "fish omarchy-theme.fish may be stale — re-apply theme or source fish.conf"
+    fi
+  else
+    warn "fish omarchy-theme.fish missing"
+  fi
+
+  if [[ -f $HOME/.config/omarchy/theme.bash ]]; then
+    ok "bash theme.bash installed"
+  else
+    warn "bash theme.bash missing (only needed for bash users)"
+  fi
+
+  if [[ -f $HOME/.bashrc ]] && rg -q 'omarchy theme bash' "$HOME/.bashrc" 2>/dev/null; then
+    ok "bashrc sources theme.bash"
+  elif [[ "${SHELL:-}" == */bash ]]; then
+    warn "bashrc does not source theme.bash — run neonfx-install"
+  fi
+
+  echo
+  echo "CLI tools"
+
+  if [[ -n ${EXA_COLORS:-} ]] || rg -q 'EXA_COLORS' "$HOME/.config/fish/conf.d/omarchy-theme.fish" "$HOME/.config/fish/conf.d/${THEME_SLUG}-cli.fish" 2>/dev/null; then
+    ok "eza EXA_COLORS configured"
+  else
+    warn "eza colors missing — open a new shell or re-apply theme"
+  fi
+
+  if [[ -n ${FZF_DEFAULT_OPTS:-} ]] || rg -q 'FZF_DEFAULT_OPTS' "$HOME/.config/fish/conf.d/omarchy-theme.fish" "$HOME/.config/fish/conf.d/${THEME_SLUG}-cli.fish" 2>/dev/null; then
+    ok "fzf theme configured"
+  else
+    warn "fzf colors missing — open a new shell or re-apply theme"
+  fi
+
+  if command -v delta >/dev/null 2>&1; then
+    if [[ -f $HOME/.config/git/${THEME_SLUG}-delta.gitconfig ]]; then
+      ok "delta git pager configured"
+    else
+      warn "delta installed but theme pager missing — re-apply theme"
+    fi
+  else
+    warn "delta not installed (optional) — run: omarchy pkg add git-delta"
+  fi
+
+  echo
+  echo "Neon FX"
+
+  if [[ -f $THEME_STATE_DIR/ghostty-shaders.conf ]]; then
+    ok "Ghostty shader overlay present"
+  else
+    warn "Ghostty shader overlay missing — run omarchy-neonfx-apply"
+  fi
+
+  echo
+  if [[ $ISSUES -eq 0 ]]; then
+    echo "All critical checks passed."
+    echo "Try: cat README.md   (syntax-highlighted via bat)"
+  else
+    echo "$ISSUES issue(s) found. Fix with: neonfx-install"
+    exit 1
+  fi
+}
+
+main "$@"

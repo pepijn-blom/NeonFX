@@ -1,0 +1,942 @@
+#!/usr/bin/env python3
+"""
+NeonFX FX Live Control Center (GTK4 / Libadwaita)
+Real-time slider, color & profile controls for Ghostty shaders (Bloom, Trail, Glitch, CRT).
+Includes Popout Cursor Trail FX Studio (Trail Bloom, Glitch & Chromatic Aberration).
+"""
+
+import os
+import sys
+import json
+import re
+import subprocess
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+from gi.repository import Gtk, Adw, GLib, Gdk
+
+THEME_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.realpath(__file__)), ".."))
+sys.path.insert(0, os.path.join(THEME_ROOT, "lib"))
+from fx_config import (  # noqa: E402
+    COMET_SMEAR_STYLE,
+    CONFIG_FILE,
+    DEFAULT_CONFIG,
+    PRESETS,
+    STATE_DIR,
+    TOGGLE_DIR,
+    TRAIL_STYLES,
+    load_config,
+    resolve_trail_style,
+    save_config,
+    sync_toggles,
+)
+from text_size import (  # noqa: E402
+    FONT_SIZE_MAX,
+    FONT_SIZE_MIN,
+    apply_font_size,
+    clamp_font_size,
+    current_font_size,
+)
+
+
+def hex_to_rgba(hex_str):
+    rgba = Gdk.RGBA()
+    hex_str = str(hex_str).strip()
+    if not hex_str.startswith("#"):
+        hex_str = "#" + hex_str
+    if not rgba.parse(hex_str):
+        rgba.parse("#00f5ff")
+    return rgba
+
+
+def rgba_to_hex(rgba):
+    r = int(round(rgba.red * 255))
+    g = int(round(rgba.green * 255))
+    b = int(round(rgba.blue * 255))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def save_and_apply_config(cfg):
+    save_config(cfg, CONFIG_FILE)
+    sync_toggles(cfg, TOGGLE_DIR)
+    apply_bin = os.path.join(THEME_ROOT, "bin", "omarchy-neonfx-apply")
+    if os.path.exists(apply_bin):
+        subprocess.run([apply_bin], capture_output=True)
+
+
+class TrailFxStudioWindow(Adw.Window):
+    """
+    Dedicated popout window for all Trail-specific FX:
+    Base Motion, Trail Bloom Halo, Trail Glitch Jitter, and Trail Chromatic Aberration.
+    """
+    def __init__(self, parent_window):
+        super().__init__(title="󱓞 Cursor Trail FX Studio")
+        self.set_transient_for(parent_window)
+        self.set_modal(False)
+        self.set_default_size(540, 740)
+        self.parent_window = parent_window
+        self.cfg = parent_window.cfg
+        self.scales = {}
+
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self.set_content(content)
+
+        header = Adw.HeaderBar()
+        content.append(header)
+
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_vexpand(True)
+        content.append(scrolled)
+
+        clamp = Adw.Clamp()
+        clamp.set_maximum_size(580)
+        clamp.set_tightening_threshold(460)
+        scrolled.set_child(clamp)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        box.set_margin_top(16)
+        box.set_margin_bottom(24)
+        box.set_margin_start(16)
+        box.set_margin_end(16)
+        clamp.set_child(box)
+
+        style_group = Adw.PreferencesGroup()
+        style_group.set_title("Trail Style")
+        style_group.set_description("Cursor motion look. Blaze Spear is the default.")
+        box.append(style_group)
+
+        self.style_ids = [sid for sid, _label in TRAIL_STYLES]
+        self.style_labels = [label for _sid, label in TRAIL_STYLES]
+        self.style_row = Adw.ComboRow(title="Preset", subtitle="Live-swappable trail shader")
+        self.style_row.set_model(Gtk.StringList.new(self.style_labels))
+        current_style = resolve_trail_style(self.cfg.get("trail_style"))
+        self.style_row.set_selected(self.style_ids.index(current_style))
+        self.style_row.connect("notify::selected", self.on_style_changed)
+        style_group.add(self.style_row)
+
+        # 1. Base Trail & Motion Group
+        base_group = Adw.PreferencesGroup()
+        base_group.set_title("󱓞 Trail Motion & Color")
+        base_group.set_description("Comet sweep duration, smear geometry, and palette")
+        box.append(base_group)
+
+        self.trail_switch = Adw.SwitchRow(title="Enable Cursor Trail")
+        self.trail_switch.set_active(bool(self.cfg.get("trail_enabled", True)))
+        self.trail_switch.connect("notify::active", lambda w, p: self.on_switch_change("trail_enabled", w.get_active()))
+        base_group.add(self.trail_switch)
+
+        # Trail Color Row
+        self.trail_color_row = Adw.ActionRow(title="Trail Color", subtitle="Hex code (#00f5ff) or color picker")
+        color_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        color_box.set_valign(Gtk.Align.CENTER)
+
+        current_color = self.cfg.get("trail_color", "#00f5ff")
+
+        self.trail_color_entry = Gtk.Entry()
+        self.trail_color_entry.add_css_class("hex-entry")
+        self.trail_color_entry.set_text(current_color)
+        self.trail_color_entry.set_max_length(7)
+        self.trail_color_entry.set_width_chars(8)
+        self.trail_color_entry.set_alignment(0.5)
+        self.trail_color_entry.connect("changed", self.on_hex_entry_changed)
+        color_box.append(self.trail_color_entry)
+
+        color_dialog = Gtk.ColorDialog.new()
+        color_dialog.set_with_alpha(False)
+        self.trail_color_btn = Gtk.ColorDialogButton.new(color_dialog)
+        self.trail_color_btn.set_rgba(hex_to_rgba(current_color))
+        self.trail_color_btn.connect("notify::rgba", self.on_color_btn_changed)
+        color_box.append(self.trail_color_btn)
+
+        self.trail_color_row.add_suffix(color_box)
+        base_group.add(self.trail_color_row)
+
+        self.trail_duration_row = self.create_slider_row("Trail Duration (s)", "trail_duration", 0.05, 0.60, 0.01, 2)
+        base_group.add(self.trail_duration_row)
+
+        self.trail_size_row = self.create_slider_row("Trail Smear Length", "trail_size", 0.10, 1.00, 0.05, 2)
+        base_group.add(self.trail_size_row)
+
+        self.trail_opacity_row = self.create_slider_row("Trail Opacity", "trail_opacity", 0.05, 1.00, 0.05, 2)
+        base_group.add(self.trail_opacity_row)
+
+        # 2. Trail Bloom Group
+        self.bloom_group = Adw.PreferencesGroup()
+        self.bloom_group.set_title("󰌵 Trail Bloom / Neon Halo")
+        self.bloom_group.set_description("Ambient glowing neon bloom halo radiating around the moving trail")
+        box.append(self.bloom_group)
+
+        self.trail_bloom_switch = Adw.SwitchRow(title="Enable Trail Bloom")
+        self.trail_bloom_switch.set_active(bool(self.cfg.get("trail_bloom_enabled", False)))
+        self.trail_bloom_switch.connect("notify::active", lambda w, p: self.on_switch_change("trail_bloom_enabled", w.get_active()))
+        self.bloom_group.add(self.trail_bloom_switch)
+
+        self.trail_bloom_strength_row = self.create_slider_row("Bloom Glow Strength", "trail_bloom_strength", 0.00, 2.50, 0.05, 2)
+        self.bloom_group.add(self.trail_bloom_strength_row)
+
+        self.trail_bloom_radius_row = self.create_slider_row("Bloom Halo Radius (px)", "trail_bloom_radius", 0.5, 6.0, 0.1, 1)
+        self.bloom_group.add(self.trail_bloom_radius_row)
+
+        # 3. Trail Glitch Group
+        self.glitch_group = Adw.PreferencesGroup()
+        self.glitch_group.set_title("󱓞 Trail Glitch & Scanline Tear")
+        self.glitch_group.set_description("Digital raster tear and electric static noise bursts along the comet tail")
+        box.append(self.glitch_group)
+
+        self.trail_glitch_switch = Adw.SwitchRow(title="Enable Trail Glitch")
+        self.trail_glitch_switch.set_active(bool(self.cfg.get("trail_glitch_enabled", False)))
+        self.trail_glitch_switch.connect("notify::active", lambda w, p: self.on_switch_change("trail_glitch_enabled", w.get_active()))
+        self.glitch_group.add(self.trail_glitch_switch)
+
+        self.trail_glitch_strength_row = self.create_slider_row("Tear Displacement Strength", "trail_glitch_strength", 0.005, 0.100, 0.002, 3)
+        self.glitch_group.add(self.trail_glitch_strength_row)
+
+        self.trail_glitch_static_row = self.create_slider_row("Digital Static Noise Density", "trail_glitch_static", 0.000, 0.017, 0.001, 3)
+        self.glitch_group.add(self.trail_glitch_static_row)
+
+
+        # 4. Trail Chromatic Aberration Group
+        self.aberration_group = Adw.PreferencesGroup()
+        self.aberration_group.set_title("󱓞 Trail Chromatic Aberration")
+        self.aberration_group.set_description("RGB color channel fringe separation along the comet trail edges")
+        box.append(self.aberration_group)
+
+        self.trail_aberration_switch = Adw.SwitchRow(title="Enable Trail Chromatic Aberration")
+        self.trail_aberration_switch.set_active(bool(self.cfg.get("trail_aberration_enabled", False)))
+        self.trail_aberration_switch.connect("notify::active", lambda w, p: self.on_switch_change("trail_aberration_enabled", w.get_active()))
+        self.aberration_group.add(self.trail_aberration_switch)
+
+        self.trail_aberration_strength_row = self.create_slider_row("RGB Fringe Separation", "trail_aberration_strength", 0.0005, 0.0150, 0.0005, 4)
+        self.aberration_group.add(self.trail_aberration_strength_row)
+
+        self.update_style_sensitive()
+        self.connect("close-request", self.on_close_request)
+
+        self._updating_ui = True
+        GLib.idle_add(self._finish_ui_init)
+
+    def on_close_request(self, win):
+        self.hide()
+        return True
+
+
+    def _finish_ui_init(self):
+        self._updating_ui = False
+        return False
+
+    def create_slider_row(self, title, key, min_val, max_val, step, digits=2):
+        row = Adw.ActionRow(title=title)
+        val = float(self.cfg.get(key, DEFAULT_CONFIG.get(key, min_val)))
+
+        scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, min_val, max_val, step)
+        scale.set_value(val)
+        scale.set_digits(digits)
+        scale.set_value_pos(Gtk.PositionType.RIGHT)
+        scale.set_draw_value(True)
+        scale.set_hexpand(True)
+        scale.set_size_request(180, -1)
+
+        scale.connect("value-changed", lambda s, k=key, d=digits: self.on_slider_change(k, s.get_value(), d))
+        row.add_suffix(scale)
+
+        self.scales[key] = scale
+        return row
+
+    def on_style_changed(self, row, pspec):
+        if self._updating_ui:
+            return
+        idx = row.get_selected()
+        if idx < 0 or idx >= len(self.style_ids):
+            return
+        self.parent_window.set_trail_style(self.style_ids[idx], source="studio")
+
+    def update_style_sensitive(self):
+        is_smear = resolve_trail_style(self.cfg.get("trail_style")) == COMET_SMEAR_STYLE
+        self.trail_size_row.set_visible(is_smear)
+        self.trail_opacity_row.set_visible(is_smear)
+        self.bloom_group.set_visible(is_smear)
+        self.glitch_group.set_visible(is_smear)
+        self.aberration_group.set_visible(is_smear)
+
+    def on_slider_change(self, key, value, digits):
+        if self._updating_ui:
+            return
+        self.parent_window.on_slider_change(key, value, digits, source="studio")
+
+    def on_switch_change(self, key, active):
+        if self._updating_ui:
+            return
+        self.parent_window.on_switch_change(key, active, source="studio")
+
+    def on_color_btn_changed(self, btn, pspec):
+        if self._updating_ui:
+            return
+        rgba = btn.get_rgba()
+        self.parent_window.set_trail_color(rgba_to_hex(rgba), source="studio")
+
+    def on_hex_entry_changed(self, entry):
+        if self._updating_ui:
+            return
+        text = entry.get_text().strip()
+        if not text.startswith("#"):
+            text = "#" + text
+        if len(text) == 7 and re.match(r"^#[0-9a-fA-F]{6}$", text):
+            self.parent_window.set_trail_color(text.lower(), source="studio")
+
+    def sync_from_config(self):
+        prev = self._updating_ui
+        self._updating_ui = True
+
+        self.trail_switch.set_active(bool(self.cfg.get("trail_enabled", True)))
+        self.trail_bloom_switch.set_active(bool(self.cfg.get("trail_bloom_enabled", False)))
+        self.trail_glitch_switch.set_active(bool(self.cfg.get("trail_glitch_enabled", False)))
+        self.trail_aberration_switch.set_active(bool(self.cfg.get("trail_aberration_enabled", False)))
+
+        trail_color = self.cfg.get("trail_color", "#00f5ff")
+        self.trail_color_entry.set_text(trail_color)
+        self.trail_color_btn.set_rgba(hex_to_rgba(trail_color))
+
+        for key, scale in self.scales.items():
+            if key in self.cfg:
+                target_val = float(self.cfg[key])
+                if abs(scale.get_value() - target_val) > 1e-5:
+                    scale.set_value(target_val)
+
+        style = resolve_trail_style(self.cfg.get("trail_style"))
+        if style in self.style_ids:
+            idx = self.style_ids.index(style)
+            if self.style_row.get_selected() != idx:
+                self.style_row.set_selected(idx)
+        self.update_style_sensitive()
+
+        self._updating_ui = prev
+
+
+
+class FxControlWindow(Adw.ApplicationWindow):
+    def __init__(self, app):
+        super().__init__(application=app, title="⚡ Neon FX Controls")
+        self.set_default_size(560, 800)
+        self.cfg = load_config()
+
+        # Guard flag so widget setup signals NEVER trigger saves
+        self._updating_ui = True
+        self._save_timeout_id = None
+        self._font_timeout_id = None
+        self._font_size = current_font_size()
+        self.scales = {}
+        self.trail_studio_win = None
+
+        # Apply CSS styling for Synthwave/Cyberpunk look
+        css_provider = Gtk.CssProvider()
+        css = """
+        window {
+            background-color: #0c0018;
+            color: #00f5ff;
+        }
+        headerbar {
+            background-color: #15002b;
+            color: #00f5ff;
+            border-bottom: 1px solid #ff0099;
+        }
+        .preferences-group-title {
+            color: #ff0099;
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+        row {
+            background-color: rgba(26, 16, 48, 0.65);
+            border-radius: 8px;
+            margin-bottom: 4px;
+            color: #ece6ff;
+        }
+        row:hover {
+            background-color: rgba(45, 20, 80, 0.85);
+        }
+        scale trough {
+            background-color: #1a1030;
+            border: 1px solid #3d2a5c;
+            border-radius: 4px;
+            min-height: 8px;
+        }
+        scale highlight {
+            background-color: #00f5ff;
+            border-radius: 4px;
+        }
+        scale slider {
+            background-color: #ff0099;
+            border: 2px solid #00f5ff;
+            border-radius: 50%;
+            min-width: 18px;
+            min-height: 18px;
+        }
+        switch:checked {
+            background-color: #00f5ff;
+            border-color: #00f5ff;
+        }
+        button.preset-btn {
+            background-color: #1a1030;
+            color: #00f5ff;
+            border: 1px solid #ff0099;
+            border-radius: 6px;
+            font-weight: bold;
+            padding: 6px 12px;
+        }
+        button.preset-btn:hover {
+            background-color: #ff0099;
+            color: #0c0018;
+        }
+        button.action-btn {
+            background-color: #1a1030;
+            color: #00f5ff;
+            border: 1px solid #5eb3ff;
+            border-radius: 6px;
+            font-weight: bold;
+            padding: 6px 12px;
+        }
+        button.action-btn:hover {
+            background-color: #5eb3ff;
+            color: #0c0018;
+        }
+        button.studio-btn {
+            background-color: #2a1045;
+            color: #ff0099;
+            border: 1px solid #ff0099;
+            border-radius: 6px;
+            font-weight: bold;
+            padding: 6px 14px;
+        }
+        button.studio-btn:hover {
+            background-color: #ff0099;
+            color: #0c0018;
+        }
+        entry.hex-entry {
+            background-color: #15002b;
+            color: #00f5ff;
+            border: 1px solid #3d2a5c;
+            border-radius: 6px;
+            font-family: monospace;
+            font-weight: bold;
+            font-size: 1.05em;
+        }
+        entry.hex-entry:focus {
+            border-color: #00f5ff;
+        }
+        label.status-label {
+            color: #00ff9f;
+            font-weight: bold;
+            font-size: 0.95em;
+        }
+        """
+        css_provider.load_from_data(css.encode())
+        Gtk.StyleContext.add_provider_for_display(
+            self.get_display(),
+            css_provider,
+            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
+        )
+
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self.set_content(content)
+        self.connect("close-request", self.on_close_request)
+
+        # Headerbar
+
+        header = Adw.HeaderBar()
+        content.append(header)
+
+        # Scrolled content
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_vexpand(True)
+        content.append(scrolled)
+
+        clamp = Adw.Clamp()
+        clamp.set_maximum_size(600)
+        clamp.set_tightening_threshold(480)
+        scrolled.set_child(clamp)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        box.set_margin_top(16)
+        box.set_margin_bottom(24)
+        box.set_margin_start(16)
+        box.set_margin_end(16)
+        clamp.set_child(box)
+
+        font_group = Adw.PreferencesGroup()
+        font_group.set_title("Aa  Font Size")
+        font_group.set_description("Ghostty terminal font size only — desktop and other apps stay unchanged")
+        box.append(font_group)
+
+        font_row = Adw.ActionRow(
+            title="Ghostty Font Size (pt)",
+            subtitle=f"{FONT_SIZE_MIN}–{FONT_SIZE_MAX} pt, writes ~/.config/ghostty/config",
+        )
+        font_scale = Gtk.Scale.new_with_range(
+            Gtk.Orientation.HORIZONTAL, FONT_SIZE_MIN, FONT_SIZE_MAX, 1
+        )
+        font_scale.set_value(self._font_size)
+        font_scale.set_digits(0)
+        font_scale.set_value_pos(Gtk.PositionType.RIGHT)
+        font_scale.set_draw_value(True)
+        font_scale.set_hexpand(True)
+        font_scale.set_size_request(180, -1)
+        font_scale.connect("value-changed", self.on_font_size_change)
+        font_row.add_suffix(font_scale)
+        self.font_size_scale = font_scale
+        font_group.add(font_row)
+
+        # 1. Presets Group
+        preset_group = Adw.PreferencesGroup()
+        preset_group.set_title("✨ Presets")
+        box.append(preset_group)
+
+        preset_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        preset_box.set_homogeneous(True)
+        preset_group.add(preset_box)
+
+        for name, p_cfg in PRESETS.items():
+            btn = Gtk.Button(label=name)
+            btn.add_css_class("preset-btn")
+            btn.connect("clicked", lambda b, pc=p_cfg: self.apply_preset_dict(pc))
+            preset_box.append(btn)
+
+        # 2. Text Bloom Group
+        bloom_group = Adw.PreferencesGroup()
+        bloom_group.set_title("󱓞 Text Bloom / Neon Glow")
+        bloom_group.set_description("Buttery smooth Gaussian bloom with crisp letterforms")
+        box.append(bloom_group)
+
+        self.bloom_switch = Adw.SwitchRow(title="Enable Text Bloom")
+        self.bloom_switch.set_active(bool(self.cfg.get("bloom_enabled", True)))
+        self.bloom_switch.connect("notify::active", lambda w, p: self.on_switch_change("bloom_enabled", w.get_active()))
+        bloom_group.add(self.bloom_switch)
+
+        self.bloom_strength_row = self.create_slider_row(
+            "Bloom Strength",
+            "bloom_strength",
+            min_val=0.0,
+            max_val=3.0,
+            step=0.05,
+            digits=2,
+        )
+        bloom_group.add(self.bloom_strength_row)
+
+        self.bloom_radius_row = self.create_slider_row(
+            "Bloom Radius (px)",
+            "bloom_radius",
+            min_val=1.0,
+            max_val=8.0,
+            step=0.1,
+            digits=1,
+        )
+        bloom_group.add(self.bloom_radius_row)
+
+        # 3. Cursor Comet Trail Group
+        trail_group = Adw.PreferencesGroup()
+        trail_group.set_title("󱓞 Cursor Comet Trail")
+        trail_group.set_description("Smooth glowing trail trailing the cursor motion")
+        box.append(trail_group)
+
+        self.trail_switch = Adw.SwitchRow(title="Enable Cursor Trail")
+        self.trail_switch.set_active(bool(self.cfg.get("trail_enabled", True)))
+        self.trail_switch.connect("notify::active", lambda w, p: self.on_switch_change("trail_enabled", w.get_active()))
+        trail_group.add(self.trail_switch)
+
+        # Trail Color Row with Hex Input and Color Dialog Picker
+        self.trail_color_row = Adw.ActionRow(title="Trail Color", subtitle="Hex code (#00f5ff) or color picker")
+        color_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        color_box.set_valign(Gtk.Align.CENTER)
+
+        current_color = self.cfg.get("trail_color", "#00f5ff")
+
+        self.trail_color_entry = Gtk.Entry()
+        self.trail_color_entry.add_css_class("hex-entry")
+        self.trail_color_entry.set_text(current_color)
+        self.trail_color_entry.set_max_length(7)
+        self.trail_color_entry.set_width_chars(8)
+        self.trail_color_entry.set_alignment(0.5)
+        self.trail_color_entry.connect("changed", self.on_hex_entry_changed)
+        color_box.append(self.trail_color_entry)
+
+        color_dialog = Gtk.ColorDialog.new()
+        color_dialog.set_with_alpha(False)
+        self.trail_color_btn = Gtk.ColorDialogButton.new(color_dialog)
+        self.trail_color_btn.set_rgba(hex_to_rgba(current_color))
+        self.trail_color_btn.connect("notify::rgba", self.on_color_btn_changed)
+        color_box.append(self.trail_color_btn)
+
+        self.trail_color_row.add_suffix(color_box)
+        trail_group.add(self.trail_color_row)
+
+        self.trail_duration_row = self.create_slider_row(
+            "Trail Duration (s)",
+            "trail_duration",
+            min_val=0.05,
+            max_val=0.60,
+            step=0.01,
+            digits=2,
+        )
+        trail_group.add(self.trail_duration_row)
+
+        self.trail_size_row = self.create_slider_row(
+            "Trail Smear Length",
+            "trail_size",
+            min_val=0.10,
+            max_val=1.00,
+            step=0.05,
+            digits=2,
+        )
+        trail_group.add(self.trail_size_row)
+
+        self.trail_opacity_row = self.create_slider_row(
+            "Trail Opacity",
+            "trail_opacity",
+            min_val=0.05,
+            max_val=1.00,
+            step=0.05,
+            digits=2,
+        )
+        trail_group.add(self.trail_opacity_row)
+
+        # Popout Trail Studio Action Row
+        studio_row = Adw.ActionRow(
+            title="Advanced Trail FX Studio",
+            subtitle="Configure Trail Bloom, Trail Glitch & Chromatic Aberration in a popout window"
+        )
+        studio_btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        studio_btn_box.set_valign(Gtk.Align.CENTER)
+
+        open_studio_btn = Gtk.Button(label="⚙ Open Trail Studio...")
+        open_studio_btn.add_css_class("studio-btn")
+        open_studio_btn.connect("clicked", lambda b: self.open_trail_studio())
+        studio_btn_box.append(open_studio_btn)
+
+        studio_row.add_suffix(studio_btn_box)
+        trail_group.add(studio_row)
+
+        # 4. Cursor Glitch Group
+        glitch_group = Adw.PreferencesGroup()
+        glitch_group.set_title("󱓞 Cursor Glitch / Burst")
+        glitch_group.set_description("Digital glitch tear when typing and changing cursor modes")
+        box.append(glitch_group)
+
+        self.glitch_switch = Adw.SwitchRow(title="Enable Cursor Glitch")
+        self.glitch_switch.set_active(bool(self.cfg.get("glitch_enabled", True)))
+        self.glitch_switch.connect("notify::active", lambda w, p: self.on_switch_change("glitch_enabled", w.get_active()))
+        glitch_group.add(self.glitch_switch)
+
+        self.glitch_strength_row = self.create_slider_row(
+            "Tear Strength",
+            "glitch_strength",
+            min_val=0.005,
+            max_val=0.080,
+            step=0.001,
+            digits=3,
+        )
+        glitch_group.add(self.glitch_strength_row)
+
+        self.glitch_duration_row = self.create_slider_row(
+            "Glitch Duration (s)",
+            "glitch_duration",
+            min_val=0.10,
+            max_val=0.80,
+            step=0.01,
+            digits=2,
+        )
+        glitch_group.add(self.glitch_duration_row)
+
+        # 5. CRT Scanlines Group
+        crt_group = Adw.PreferencesGroup()
+        crt_group.set_title("󱓞 CRT Scanlines & Vignette")
+        crt_group.set_description("Retro terminal scanlines, subtle vignette, and chromatic aberration")
+        box.append(crt_group)
+
+        self.crt_switch = Adw.SwitchRow(title="Enable CRT Scanlines")
+        self.crt_switch.set_active(bool(self.cfg.get("crt_enabled", True)))
+        self.crt_switch.connect("notify::active", lambda w, p: self.on_switch_change("crt_enabled", w.get_active()))
+        crt_group.add(self.crt_switch)
+
+        self.scanline_row = self.create_slider_row(
+            "Scanline Intensity",
+            "scanline_strength",
+            min_val=0.00,
+            max_val=0.85,
+            step=0.02,
+            digits=2,
+        )
+        crt_group.add(self.scanline_row)
+
+        self.scanline_spacing_row = self.create_slider_row(
+            "Scanline Beam Pitch (px)",
+            "scanline_spacing",
+            min_val=1.0,
+            max_val=6.0,
+            step=0.5,
+            digits=1,
+        )
+        crt_group.add(self.scanline_spacing_row)
+
+        self.vignette_row = self.create_slider_row(
+            "Vignette Darkness",
+            "vignette_strength",
+            min_val=0.00,
+            max_val=0.60,
+            step=0.02,
+            digits=2,
+        )
+        crt_group.add(self.vignette_row)
+
+        self.aberration_row = self.create_slider_row(
+            "Chromatic Aberration",
+            "aberration_strength",
+            min_val=0.0000,
+            max_val=0.0080,
+            step=0.0005,
+            digits=4,
+        )
+        crt_group.add(self.aberration_row)
+
+        # 6. Backup & Profiles (Export / Import) Group
+        backup_group = Adw.PreferencesGroup()
+        backup_group.set_title("📦 Backup & Profiles")
+        backup_group.set_description(f"Config stored at: ~/.local/state/omarchy/neonfx/fx-config.json")
+        box.append(backup_group)
+
+        # File actions row
+        file_row = Adw.ActionRow(title="Configuration Files", subtitle="Save or restore full settings JSON")
+        file_btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        file_btn_box.set_valign(Gtk.Align.CENTER)
+
+        exp_btn = Gtk.Button(label="Export File...")
+        exp_btn.add_css_class("action-btn")
+        exp_btn.connect("clicked", self.on_export_clicked)
+        file_btn_box.append(exp_btn)
+
+        imp_btn = Gtk.Button(label="Import File...")
+        imp_btn.add_css_class("action-btn")
+        imp_btn.connect("clicked", self.on_import_clicked)
+        file_btn_box.append(imp_btn)
+
+        file_row.add_suffix(file_btn_box)
+        backup_group.add(file_row)
+
+        # Status feedback label
+        self.status_label = Gtk.Label(label="")
+        self.status_label.add_css_class("status-label")
+        self.status_label.set_margin_top(4)
+        box.append(self.status_label)
+
+        # Ready for user input after idle cycle
+        GLib.idle_add(self._finish_ui_init)
+
+    def _finish_ui_init(self):
+        self._updating_ui = False
+        return False
+
+    def show_status_msg(self, msg):
+        self.status_label.set_text(msg)
+        GLib.timeout_add(3500, lambda: self.status_label.set_text("") or False)
+
+    def open_trail_studio(self):
+        if self.trail_studio_win is None:
+            self.trail_studio_win = TrailFxStudioWindow(self)
+        self.trail_studio_win.sync_from_config()
+        self.trail_studio_win.present()
+
+    def on_close_request(self, win):
+        if self.trail_studio_win:
+            self.trail_studio_win.destroy()
+            self.trail_studio_win = None
+        return False
+
+
+
+    def on_export_clicked(self, widget):
+        dialog = Gtk.FileDialog.new()
+        dialog.set_title("Export Neon FX Settings")
+        dialog.set_initial_name("neonfx-fx.json")
+
+        def on_save_finish(dialog, result):
+            try:
+                gfile = dialog.save_finish(result)
+                path = gfile.get_path()
+                if path:
+                    with open(path, "w") as f:
+                        json.dump(self.cfg, f, indent=2)
+                    self.show_status_msg(f"✓ Exported to {os.path.basename(path)}")
+            except Exception:
+                pass
+
+        dialog.save(self, None, on_save_finish)
+
+    def on_import_clicked(self, widget):
+        dialog = Gtk.FileDialog.new()
+        dialog.set_title("Import Neon FX Settings")
+
+        def on_open_finish(dialog, result):
+            try:
+                gfile = dialog.open_finish(result)
+                path = gfile.get_path()
+                if path and os.path.exists(path):
+                    with open(path, "r") as f:
+                        imported = json.load(f)
+                    if isinstance(imported, dict):
+                        self.apply_preset_dict(imported)
+                        self.show_status_msg(f"✓ Imported from {os.path.basename(path)}")
+            except Exception:
+                self.show_status_msg("!! Invalid JSON file")
+
+        dialog.open(self, None, on_open_finish)
+
+    def create_slider_row(self, title, key, min_val, max_val, step, digits=2):
+        row = Adw.ActionRow(title=title)
+        val = float(self.cfg.get(key, DEFAULT_CONFIG.get(key, min_val)))
+
+        scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, min_val, max_val, step)
+        scale.set_value(val)
+        scale.set_digits(digits)
+        scale.set_value_pos(Gtk.PositionType.RIGHT)
+        scale.set_draw_value(True)
+        scale.set_hexpand(True)
+        scale.set_size_request(180, -1)
+
+        scale.connect("value-changed", lambda s, k=key, d=digits: self.on_slider_change(k, s.get_value(), d))
+        row.add_suffix(scale)
+
+        self.scales[key] = scale
+        return row
+
+    def on_font_size_change(self, scale):
+        if self._updating_ui:
+            return
+        new_val = clamp_font_size(scale.get_value())
+        if new_val == self._font_size:
+            return
+        self._font_size = new_val
+        if self._font_timeout_id is not None:
+            GLib.source_remove(self._font_timeout_id)
+        self._font_timeout_id = GLib.timeout_add(200, self._do_apply_font_size)
+
+    def _do_apply_font_size(self):
+        self._font_timeout_id = None
+        result = apply_font_size(self._font_size)
+        if getattr(result, "returncode", 1) != 0:
+            err = getattr(result, "stderr", b"") or b""
+            if isinstance(err, bytes):
+                err = err.decode("utf-8", "replace").strip()
+            self.show_status_msg(err or "!! Could not set Ghostty font size")
+        else:
+            self.show_status_msg(f"✓ Ghostty font size {self._font_size} pt")
+        return False
+
+    def on_slider_change(self, key, value, digits, source="main"):
+        if self._updating_ui:
+            return
+        new_val = round(float(value), digits)
+        if self.cfg.get(key) == new_val:
+            return
+        self.cfg[key] = new_val
+        self.sync_all_views(source=source)
+        self.schedule_apply()
+
+    def on_switch_change(self, key, active, source="main"):
+        if self._updating_ui:
+            return
+        if self.cfg.get(key) == bool(active):
+            return
+        self.cfg[key] = bool(active)
+        self.sync_all_views(source=source)
+        self.schedule_apply()
+
+    def set_trail_color(self, hex_str, source="main"):
+        if self._updating_ui:
+            return
+        if self.cfg.get("trail_color") == hex_str:
+            return
+        self.cfg["trail_color"] = hex_str
+        self.sync_all_views(source=source)
+        self.schedule_apply()
+
+    def set_trail_style(self, style_id, source="main"):
+        if self._updating_ui:
+            return
+        style_id = resolve_trail_style(style_id)
+        if self.cfg.get("trail_style") == style_id:
+            return
+        self.cfg["trail_style"] = style_id
+        self.sync_all_views(source=source)
+        self.schedule_apply()
+
+    def on_color_btn_changed(self, btn, pspec):
+        if self._updating_ui:
+            return
+        rgba = btn.get_rgba()
+        self.set_trail_color(rgba_to_hex(rgba), source="main")
+
+    def on_hex_entry_changed(self, entry):
+        if self._updating_ui:
+            return
+        text = entry.get_text().strip()
+        if not text.startswith("#"):
+            text = "#" + text
+        if len(text) == 7 and re.match(r"^#[0-9a-fA-F]{6}$", text):
+            self.set_trail_color(text.lower(), source="main")
+
+    def sync_all_views(self, source="none"):
+        # Update Main Window widgets if changed from Studio or Presets
+        if source != "main":
+            prev_main = self._updating_ui
+            self._updating_ui = True
+
+            self.bloom_switch.set_active(bool(self.cfg.get("bloom_enabled", True)))
+            self.trail_switch.set_active(bool(self.cfg.get("trail_enabled", True)))
+            self.glitch_switch.set_active(bool(self.cfg.get("glitch_enabled", True)))
+            self.crt_switch.set_active(bool(self.cfg.get("crt_enabled", True)))
+
+            trail_color = self.cfg.get("trail_color", "#00f5ff")
+            self.trail_color_entry.set_text(trail_color)
+            self.trail_color_btn.set_rgba(hex_to_rgba(trail_color))
+
+            for key, scale in self.scales.items():
+                if key in self.cfg:
+                    target_val = float(self.cfg[key])
+                    if abs(scale.get_value() - target_val) > 1e-5:
+                        scale.set_value(target_val)
+
+            self._updating_ui = prev_main
+
+        # Update Studio Window widgets if open and changed from Main or Presets
+        if self.trail_studio_win and self.trail_studio_win.is_visible() and source != "studio":
+            self.trail_studio_win.sync_from_config()
+
+    def schedule_apply(self):
+        if self._save_timeout_id is not None:
+            GLib.source_remove(self._save_timeout_id)
+        self._save_timeout_id = GLib.timeout_add(160, self._do_save_and_apply)
+
+    def _do_save_and_apply(self):
+        self._save_timeout_id = None
+        save_and_apply_config(self.cfg)
+        return False
+
+    def apply_preset_dict(self, preset_dict):
+        self.cfg.update(preset_dict)
+        self.sync_all_views(source="preset")
+        self.schedule_apply()
+
+
+
+class FxApp(Adw.Application):
+    def __init__(self):
+        super().__init__(application_id="org.omarchy.neonfx")
+
+    def do_activate(self):
+        win = self.props.active_window
+        if not win:
+            win = FxControlWindow(self)
+        win.present()
+
+
+if __name__ == "__main__":
+    app = FxApp()
+    sys.exit(app.run(sys.argv))
