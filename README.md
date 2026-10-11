@@ -144,6 +144,7 @@ When NeonFX is active, the theme hook creates these symlinks and files:
 | bat syntax theme | `bat/NeonFX.tmTheme` | `~/.config/bat/themes/` |
 | git CLI colors | `git.conf` | `~/.config/git/neonfx.gitconfig` (+ include in `~/.gitconfig`) |
 | lazygit theme | `lazygit/config.yml` | `~/.config/lazygit/config.yml` |
+| yazi theme & flavor | `yazi/theme.toml` + `yazi/flavors/neonfx.yazi/` | `~/.config/yazi/theme.toml` + `~/.config/yazi/flavors/neonfx.yazi` |
 | starship prompt | `starship.toml` | `~/.config/starship.toml` |
 | fastfetch | `fastfetch.jsonc` | `~/.config/fastfetch/config.jsonc` |
 | delta pager (optional) | `delta.gitconfig` | `~/.config/git/neonfx-delta.gitconfig` when `delta` is installed |
@@ -260,6 +261,7 @@ Beyond bat/git, these everyday terminal tools get neon colors when the theme is 
 | **fzf** | `FZF_DEFAULT_OPTS` | Neon picker borders, magenta selection, cyan info line |
 | **jq** | `JQ_COLORS` | Themed JSON keys, strings, numbers, booleans |
 | **lazygit** | [`lazygit/config.yml`](lazygit/config.yml) | Full TUI theme; diffs via bat (or delta if installed) |
+| **yazi** | [`yazi/`](yazi/) | Full synthwave file manager flavor + TextMate syntax previews + git status |
 | **starship** | [`starship.toml`](starship.toml) | Cyan path, pink branch, mint git status icons |
 | **fastfetch** | [`fastfetch.jsonc`](fastfetch.jsonc) | Omarchy About screen with magenta/cyan section keys |
 | **delta** | [`delta.gitconfig`](delta.gitconfig) | Rich `git diff` pager (auto-wired when `delta` is installed) |
@@ -286,6 +288,7 @@ eza -la
 fzf --preview 'bat --color=always {}'
 echo '{"neon":true,"count":42}' | jq
 lazygit
+yazi
 fastfetch
 ```
 
@@ -485,6 +488,7 @@ NeonFX/
 ├── bat/NeonFX.tmTheme
 ├── fish.conf / bash.conf / git.conf / cli.env.sh
 ├── lazygit/config.yml
+├── yazi/theme.toml & yazi/flavors/neonfx.yazi/
 ├── starship.toml
 ├── fastfetch.jsonc
 ├── delta.gitconfig

@@ -122,6 +122,21 @@ main() {
       "$theme_root/starship.toml" "starship prompt"
     check_owned_link "$HOME/.config/fastfetch/config.jsonc" \
       "$theme_root/fastfetch.jsonc" "fastfetch config"
+    check_owned_link "$HOME/.config/yazi/flavors/${THEME_SLUG}.yazi" \
+      "$theme_root/yazi/flavors/${THEME_SLUG}.yazi" "yazi flavor"
+
+    if [[ -f $HOME/.config/yazi/theme.toml && ! -L $HOME/.config/yazi/theme.toml ]]; then
+      if [[ $theme_active -eq 1 ]]; then
+        if grep -q "${THEME_SLUG}" "$HOME/.config/yazi/theme.toml" 2>/dev/null; then
+          ok "yazi theme.toml (custom file uses ${THEME_SLUG} flavor)"
+        else
+          warn "custom yazi theme.toml present — add [flavor] dark = \"${THEME_SLUG}\" to use NeonFX"
+        fi
+      fi
+    else
+      check_owned_link "$HOME/.config/yazi/theme.toml" \
+        "$theme_root/yazi/theme.toml" "yazi theme"
+    fi
 
     if [[ $theme_active -eq 1 ]]; then
       if [[ -f $HOME/.config/omarchy/extensions/omarchy-menu.jsonc ]] && grep -q 'style.neon' "$HOME/.config/omarchy/extensions/omarchy-menu.jsonc" 2>/dev/null; then
@@ -212,6 +227,12 @@ main() {
     fi
   else
     warn "delta not installed (optional) — run: omarchy pkg add git-delta"
+  fi
+
+  if command -v yazi >/dev/null 2>&1; then
+    ok "yazi installed"
+  else
+    warn "yazi not installed (optional) — run: pacman -S yazi"
   fi
 
   echo

@@ -1,0 +1,6 @@
+# NeonFX — Yazi theme
+#:schema https://yazi-rs.github.io/schemas/theme.json
+
+[flavor]
+dark = "neonfx"
+light = "neonfx"

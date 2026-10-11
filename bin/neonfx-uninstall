@@ -84,6 +84,9 @@ cleanup_theme_root() {
   remove_if_ours "$HOME/.config/lazygit/config.yml" "$theme_root/lazygit/config.yml"
   remove_if_ours "$HOME/.config/starship.toml" "$theme_root/starship.toml"
   remove_if_ours "$HOME/.config/fastfetch/config.jsonc" "$theme_root/fastfetch.jsonc"
+  remove_if_ours "$HOME/.config/yazi/theme.toml" "$theme_root/yazi/theme.toml"
+  remove_if_ours "$HOME/.config/yazi/flavors/neonfx.yazi" "$theme_root/yazi/flavors/neonfx.yazi"
+  rmdir "$HOME/.config/yazi/flavors" 2>/dev/null || true
 
   local script
   for script in "${THEME_CLI_SCRIPTS[@]}"; do

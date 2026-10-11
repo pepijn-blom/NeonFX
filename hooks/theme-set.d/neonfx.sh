@@ -82,17 +82,27 @@ remove_if_link() {
 install_cli_configs() {
   local lazygit_dir="$HOME/.config/lazygit"
   local fastfetch_dir="$HOME/.config/fastfetch"
+  local yazi_dir="$HOME/.config/yazi"
+  local yazi_flavors_dir="$yazi_dir/flavors"
 
-  mkdir -p "$lazygit_dir" "$fastfetch_dir"
+  mkdir -p "$lazygit_dir" "$fastfetch_dir" "$yazi_flavors_dir"
   ln -sfn "$THEME_ROOT/lazygit/config.yml" "$lazygit_dir/config.yml"
   ln -sfn "$THEME_ROOT/starship.toml" "$HOME/.config/starship.toml"
   ln -sfn "$THEME_ROOT/fastfetch.jsonc" "$fastfetch_dir/config.jsonc"
+  ln -sfn "$THEME_ROOT/yazi/flavors/neonfx.yazi" "$yazi_flavors_dir/neonfx.yazi"
+
+  if [[ ! -f "$yazi_dir/theme.toml" || -L "$yazi_dir/theme.toml" ]]; then
+    ln -sfn "$THEME_ROOT/yazi/theme.toml" "$yazi_dir/theme.toml"
+  fi
 }
 
 remove_cli_configs() {
   remove_if_link "$HOME/.config/lazygit/config.yml" "$THEME_ROOT/lazygit/config.yml"
   remove_if_link "$HOME/.config/starship.toml" "$THEME_ROOT/starship.toml"
   remove_if_link "$HOME/.config/fastfetch/config.jsonc" "$THEME_ROOT/fastfetch.jsonc"
+  remove_if_link "$HOME/.config/yazi/theme.toml" "$THEME_ROOT/yazi/theme.toml"
+  remove_if_link "$HOME/.config/yazi/flavors/neonfx.yazi" "$THEME_ROOT/yazi/flavors/neonfx.yazi"
+  rmdir "$HOME/.config/yazi/flavors" 2>/dev/null || true
 }
 
 update_omarchy_menu_jsonc() {

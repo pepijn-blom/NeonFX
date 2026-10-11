@@ -41,6 +41,8 @@ apply_theme() {
   [ -L "$HOME/.local/share/mc/skins/neonfx.ini" ]
   [ -L "$HOME/.config/omarchy/theme.bash" ]
   [ -L "$HOME/.local/bin/omarchy-neonfx-gui" ]
+  [ -L "$HOME/.config/yazi/theme.toml" ]
+  [ -L "$HOME/.config/yazi/flavors/neonfx.yazi" ]
   [ -f "$HOME/.config/fish/conf.d/omarchy-theme.fish" ]
   grep -q 'set --global EXA_COLORS' "$HOME/.config/fish/conf.d/neonfx-cli.fish"
   grep -q 'style.neon' "$HOME/.config/omarchy/extensions/omarchy-menu.jsonc"
@@ -62,6 +64,8 @@ apply_theme() {
   [ ! -e "$HOME/.config/bat/themes/NeonFX.tmTheme" ]
   [ ! -e "$HOME/.local/share/mc/skins/neonfx.ini" ]
   [ ! -e "$HOME/.config/starship.toml" ]
+  [ ! -e "$HOME/.config/yazi/theme.toml" ]
+  [ ! -e "$HOME/.config/yazi/flavors/neonfx.yazi" ]
   [ ! -e "$HOME/.local/bin/omarchy-neonfx-apply" ]
   [ ! -e "$HOME/.local/bin/omarchy-neonfx-toggle" ]
   [ ! -e "$HOME/.local/bin/omarchy-neonfx-gui" ]
@@ -105,6 +109,8 @@ apply_theme() {
   run "$THEME_ROOT/bin/neonfx-uninstall" --keep-theme-dir
   [ "$status" -eq 0 ]
   [ ! -e "$HOME/.config/omarchy/theme.bash" ]
+  [ ! -e "$HOME/.config/yazi/theme.toml" ]
+  [ ! -e "$HOME/.config/yazi/flavors/neonfx.yazi" ]
 }
 
 @test "fx apply writes ghostty-shaders.conf and patched GLSL" {

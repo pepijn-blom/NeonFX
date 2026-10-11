@@ -37,3 +37,12 @@ teardown() {
   [ -L "$HOME/dest/file" ]
   [ "$(readlink -f "$HOME/dest/file")" = "$(readlink -f "$HOME/other/file")" ]
 }
+
+@test "remove_if_ours deletes a directory symlink that points at expected" {
+  mkdir -p "$HOME/src/dir" "$HOME/dest"
+  ln -s "$HOME/src/dir" "$HOME/dest/dir"
+  remove_if_ours "$HOME/dest/dir" "$HOME/src/dir"
+  [ ! -e "$HOME/dest/dir" ]
+  [ -d "$HOME/src/dir" ]
+}
+

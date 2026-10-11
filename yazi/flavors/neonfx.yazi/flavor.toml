@@ -1,0 +1,182 @@
+# NeonFX — Yazi flavor
+#:schema https://yazi-rs.github.io/schemas/theme.json
+
+# : Manager
+[mgr]
+cwd = { fg = "#33ffb8", bold = true }
+
+# Find
+find_keyword  = { fg = "#ff0099", bold = true, italic = true, underline = true }
+find_position = { fg = "#ff33aa", bg = "reset", bold = true, italic = true }
+
+# Symlink
+symlink_target = { fg = "#ff33aa", italic = true }
+
+# Marker
+marker_copied   = { fg = "#33ffb8", bg = "#33ffb8" }
+marker_cut      = { fg = "#ff3366", bg = "#ff3366" }
+marker_marked   = { fg = "#00f5ff", bg = "#00f5ff" }
+marker_selected = { fg = "#ff0099", bg = "#ff0099" }
+marker_symbol   = "│"
+
+# Count
+count_copied   = { fg = "#0c0018", bg = "#33ffb8" }
+count_cut      = { fg = "#0c0018", bg = "#ff3366" }
+count_selected = { fg = "#0c0018", bg = "#ff0099" }
+
+# Border
+border_symbol = "│"
+border_style  = { fg = "#5a3a88" }
+
+# : Tabs
+[tabs]
+active    = { fg = "#0c0018", bg = "#00f5ff", bold = true }
+inactive  = { fg = "#66faff", bg = "#1a1030" }
+sep_inner = { open = "", close = "" }
+sep_outer = { open = "", close = "" }
+
+# : Mode
+[mode]
+normal_main = { fg = "#0c0018", bg = "#00f5ff", bold = true }
+normal_alt  = { fg = "#00f5ff", bg = "#1a1030" }
+
+select_main = { fg = "#0c0018", bg = "#ff0099", bold = true }
+select_alt  = { fg = "#ff0099", bg = "#1a1030" }
+
+unset_main  = { fg = "#0c0018", bg = "#ff3366", bold = true }
+unset_alt   = { fg = "#ff3366", bg = "#1a1030" }
+
+# : Indicator
+[indicator]
+parent  = { reversed = true }
+current = { reversed = true }
+preview = { underline = true }
+padding = { open = "", close = "" }
+
+# : Status bar
+[status]
+overall   = {}
+sep_left  = { open = "", close = "" }
+sep_right = { open = "", close = "" }
+
+# Permissions
+perm_sep   = { fg = "#5a3a88" }
+perm_type  = { fg = "#33ffb8" }
+perm_read  = { fg = "#ffe066" }
+perm_write = { fg = "#ff3366" }
+perm_exec  = { fg = "#00f5ff" }
+
+# Progress
+progress_label  = { bold = true }
+progress_normal = { fg = "#33ffb8", bg = "#1a1030" }
+progress_error  = { fg = "#ffe066", bg = "#ff3366" }
+
+# : Which
+[which]
+border          = { fg = "#5a3a88" }
+cols            = 3
+mask            = { bg = "#1a1030" }
+cand            = { fg = "#00f5ff" }
+rest            = { fg = "#7a6a98" }
+desc            = { fg = "#ff33aa" }
+separator       = "  "
+separator_style = { fg = "#5a3a88" }
+
+# : Confirm
+[confirm]
+border     = { fg = "#ff0099" }
+title      = { fg = "#00f5ff" }
+body       = {}
+list       = {}
+btn_yes    = { fg = "#0c0018", bg = "#33ffb8", bold = true }
+btn_no     = { fg = "#66faff", bg = "#1a1030" }
+btn_labels = [ "  [Y]es  ", "  (N)o  " ]
+
+# : Spotter
+[spot]
+border   = { fg = "#5a3a88" }
+title    = { fg = "#00f5ff" }
+tbl_col  = { fg = "#00f5ff" }
+tbl_cell = { fg = "#ffb3e6", reversed = true }
+
+# : Notify
+[notify]
+title_info  = { fg = "#33ffb8" }
+title_warn  = { fg = "#ffe066" }
+title_error = { fg = "#ff3366" }
+icon_info   = ""
+icon_warn   = ""
+icon_error  = ""
+
+# : Picker
+[pick]
+border   = { fg = "#5a3a88" }
+active   = { fg = "#ff0099", bold = true }
+inactive = { fg = "#00f5ff" }
+
+# : Input
+[input]
+border   = { fg = "#00f5ff" }
+title    = { fg = "#00f5ff" }
+value    = { fg = "#00f5ff" }
+selected = { fg = "#0c0018", bg = "#ff0099" }
+
+# : Completion
+[cmp]
+border       = { fg = "#5a3a88" }
+active       = { fg = "#0c0018", bg = "#00f5ff", bold = true }
+inactive     = { fg = "#66faff" }
+icon_file    = ""
+icon_folder  = ""
+icon_command = ""
+
+# : Tasks
+[tasks]
+border  = { fg = "#5a3a88" }
+title   = { fg = "#00f5ff" }
+hovered = { fg = "#ff0099", bold = true }
+
+# : Help
+[help]
+border  = { fg = "#5a3a88" }
+chord   = { fg = "#00f5ff" }
+desc    = { fg = "#ff33aa" }
+hovered = { fg = "#0c0018", bg = "#ff0099", bold = true }
+
+# : File-specific styles
+[filetype]
+rules = [
+	# Images (mint)
+	{ mime = "image/*", fg = "#33ffb8" },
+	# Media / Audio / Video (magenta)
+	{ mime = "{audio,video}/*", fg = "#ff33aa" },
+	# Archives (neon red / pink)
+	{ mime = "application/{zip,rar,7z*,tar,gzip,xz,zstd,bzip*,lzma,compress,archive,cpio,arj,xar,ms-cab*}", fg = "#ff3366" },
+	# Documents (pale lavender)
+	{ mime = "application/{pdf,doc,rtf,vnd.*}", fg = "#ffb3e6" },
+	# Code / Scripts / Text (soft cyan)
+	{ mime = "{text,application}/{javascript,typescript,json,toml,yaml,xml,x-shellscript,x-python,x-c,x-rust}", fg = "#66faff" },
+	# Virtual file system
+	{ mime = "vfs/{absent,stale}", fg = "#5a3a88" },
+	# Special file states
+	{ url = "*", is = "orphan", fg = "#ff3366", bg = "#1a1030" },
+	{ url = "*", is = "exec", fg = "#33ffb8" },
+	{ url = "*", is = "dummy", bg = "#ff3366" },
+	{ url = "*/", is = "dummy", bg = "#ff3366" },
+	# Directories fallback (soft cyan)
+	{ url = "*/", fg = "#66faff" },
+	# Regular files fallback (cyan)
+	{ url = "*", fg = "#00f5ff" },
+]
+
+# : Git status (git.yazi plugin)
+[git]
+unstaged  = { fg = "#ff33aa" }
+staged    = { fg = "#33ffb8" }
+added     = { fg = "#33ffb8" }
+deleted   = { fg = "#ff3366" }
+untracked = { fg = "#ff0099" }
+ignored   = { fg = "#5a3a88" }
+updated   = { fg = "#ffe066" }
+clean     = { fg = "#00f5ff" }
+unknown   = { fg = "#7a6a98" }
